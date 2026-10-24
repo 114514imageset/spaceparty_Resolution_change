@@ -1,0 +1,2 @@
+# spaceparty_Resolution_change
+此仓库只做到了宽分辨率和备份原本分辨率的功能，修改还没做好
