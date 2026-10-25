@@ -1,7 +1,9 @@
 using System;
 using System.Diagnostics;
+using System.Drawing;
 using System.IO;
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Microsoft.Win32;
@@ -18,14 +20,31 @@ namespace SpacePartyTool
         static Label lblBackupStatus;
         static Label lblBackupRes;
 
-        // ==========================================
-        // 【唯一需要修改的地方】以后更新版本，只改这里！
-        // ==========================================
-        static string currentVersion = "4.3";
-        // ==========================================
-
+        static string currentVersion = "4.4";
         static string versionUrl = "https://ghproxy.net/https://raw.githubusercontent.com/114514imageset/spaceparty_Resolution_change/main/Version.txt";
         static string updateUrl = "https://github.com/114514imageset/spaceparty_Resolution_change/releases";
+
+        [DllImport("gdi32.dll")]
+        static extern IntPtr CreateRoundRectRgn(int nLeftRect, int nTopRect, int nRightRect, int nBottomRect, int nWidthEllipse, int nHeightEllipse);
+        [DllImport("user32.dll")]
+        static extern bool ReleaseCapture();
+        [DllImport("user32.dll")]
+        static extern IntPtr SendMessage(IntPtr hWnd, int Msg, IntPtr wParam, IntPtr lParam);
+        [DllImport("user32.dll")]
+        static extern IntPtr LoadCursorFromFile(string lpFileName);
+
+        // 强行加载系统指针的方法
+        static Cursor GetSystemCursor()
+        {
+            try {
+                string cursorPath = Microsoft.Win32.Registry.GetValue(@"HKEY_CURRENT_USER\Control Panel\Cursors", "", null) as string;
+                if (!string.IsNullOrEmpty(cursorPath)) {
+                    IntPtr hCursor = LoadCursorFromFile(cursorPath);
+                    if (hCursor != IntPtr.Zero) return new Cursor(hCursor);
+                }
+            } catch { }
+            return Cursors.Default;
+        }
 
         [STAThread]
         static void Main()
@@ -33,7 +52,6 @@ namespace SpacePartyTool
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            // 欢迎弹窗自动读取版本号
             string msg = "欢迎使用 太空杀分辨率切换工具 " + currentVersion + "！\n\n" +
                          "【提示】修改前请确保游戏已完全关闭。\n" +
                          "【注意】本工具仅修改本地画面参数，若出现异常请使用选项 1 还原。\n\n" +
@@ -41,83 +59,86 @@ namespace SpacePartyTool
                          "用 DeepSeek 做的，尽力了\n\n" +
                          "是否打开作者的主页？";
 
-            if (MessageBox.Show(msg, "关于软件", MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
+            if (ShowCustomBox(msg, "关于软件", true, null) == DialogResult.Yes)
             {
                 Process.Start("https://space.bilibili.com/1392176543");
             }
 
             form = new Form();
-            // 标题自动读取版本号
             form.Text = "太空杀 - 分辨率切换工具 v" + currentVersion;
-            form.Size = new System.Drawing.Size(400, 380);
+            form.Size = new Size(400, 380);
             form.StartPosition = FormStartPosition.CenterScreen;
-            form.MaximizeBox = false;
-            form.FormBorderStyle = FormBorderStyle.FixedDialog;
-            
-            try
-            {
-                form.Icon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath);
-            }
-            catch { }
+            form.FormBorderStyle = FormBorderStyle.None;
+            form.BackColor = Color.White;
+            form.Cursor = GetSystemCursor(); // 强行加载系统指针
+            form.Region = Region.FromHrgn(CreateRoundRectRgn(0, 0, form.Width, form.Height, 10, 10));
+
+            form.MouseDown += (s, e) => {
+                if (e.Button == MouseButtons.Left) {
+                    ReleaseCapture();
+                    SendMessage(form.Handle, 0xA1, (IntPtr)0x2, IntPtr.Zero);
+                }
+            };
+
+            try { form.Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
+
+            Label lblClose = new Label();
+            lblClose.Text = "✕";
+            lblClose.Font = new Font("Microsoft YaHei", 12F, FontStyle.Bold);
+            lblClose.ForeColor = Color.Gray;
+            lblClose.Location = new Point(365, 10);
+            lblClose.AutoSize = true;
+            lblClose.Cursor = Cursors.Hand;
+            lblClose.MouseEnter += (s, e) => { lblClose.ForeColor = Color.Red; };
+            lblClose.MouseLeave += (s, e) => { lblClose.ForeColor = Color.Gray; };
+            lblClose.Click += (s, e) => { Application.Exit(); };
+            form.Controls.Add(lblClose);
 
             lblBackupRes = new Label();
-            lblBackupRes.Location = new System.Drawing.Point(30, 15);
-            lblBackupRes.Size = new System.Drawing.Size(320, 20);
-            lblBackupRes.Font = new System.Drawing.Font("微软雅黑", 9F, System.Drawing.FontStyle.Bold);
+            lblBackupRes.Location = new Point(30, 15);
+            lblBackupRes.Size = new Size(320, 20);
+            lblBackupRes.Font = new Font("微软雅黑", 9F, FontStyle.Bold);
             form.Controls.Add(lblBackupRes);
 
             Label lblTitle = new Label();
             lblTitle.Text = "请选择要执行的操作：";
-            lblTitle.Font = new System.Drawing.Font("微软雅黑", 12F, System.Drawing.FontStyle.Bold);
-            lblTitle.Location = new System.Drawing.Point(30, 45);
-            lblTitle.Size = new System.Drawing.Size(300, 30);
+            lblTitle.Font = new Font("微软雅黑", 12F, FontStyle.Bold);
+            lblTitle.Location = new Point(30, 45);
+            lblTitle.Size = new Size(300, 30);
             form.Controls.Add(lblTitle);
 
-            Button btn1 = new Button();
-            btn1.Text = "1. 备份 / 还原原本分辨率";
-            btn1.Location = new System.Drawing.Point(30, 85);
-            btn1.Size = new System.Drawing.Size(320, 35);
+            Button btn1 = CreateStyledButton("1. 备份 / 还原原本分辨率", 85);
             btn1.Click += new EventHandler(Btn1_Click);
             form.Controls.Add(btn1);
 
-            Button btn2 = new Button();
-            btn2.Text = "2. 一键切换超宽分辨率";
-            btn2.Location = new System.Drawing.Point(30, 135);
-            btn2.Size = new System.Drawing.Size(320, 35);
+            Button btn2 = CreateStyledButton("2. 一键切换超宽分辨率", 135);
             btn2.Click += new EventHandler(Btn2_Click);
             form.Controls.Add(btn2);
 
-            Button btn3 = new Button();
-            btn3.Text = "3. 自定义宽高修改";
-            btn3.Location = new System.Drawing.Point(30, 185);
-            btn3.Size = new System.Drawing.Size(320, 35);
+            Button btn3 = CreateStyledButton("3. 自定义宽高修改", 185);
             btn3.Click += new EventHandler(Btn3_Click);
             form.Controls.Add(btn3);
 
-            Button btn4 = new Button();
-            btn4.Text = "4. 删除本地备份";
-            btn4.Location = new System.Drawing.Point(30, 235);
-            btn4.Size = new System.Drawing.Size(320, 35);
+            Button btn4 = CreateStyledButton("4. 删除本地备份", 235);
             btn4.Click += new EventHandler(Btn4_Click);
             form.Controls.Add(btn4);
 
             lblStatus = new Label();
-            lblStatus.Location = new System.Drawing.Point(20, 300);
-            lblStatus.Size = new System.Drawing.Size(200, 20);
-            lblStatus.ForeColor = System.Drawing.Color.DimGray;
-            lblStatus.Font = new System.Drawing.Font("微软雅黑", 9F, System.Drawing.FontStyle.Regular);
+            lblStatus.Location = new Point(20, 300);
+            lblStatus.Size = new Size(200, 20);
+            lblStatus.ForeColor = Color.DimGray;
+            lblStatus.Font = new Font("微软雅黑", 9F, FontStyle.Regular);
             form.Controls.Add(lblStatus);
 
             lblBackupStatus = new Label();
-            lblBackupStatus.Location = new System.Drawing.Point(220, 300);
-            lblBackupStatus.Size = new System.Drawing.Size(150, 20);
-            lblBackupStatus.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
-            lblBackupStatus.Font = new System.Drawing.Font("微软雅黑", 9F, System.Drawing.FontStyle.Regular);
+            lblBackupStatus.Location = new Point(220, 300);
+            lblBackupStatus.Size = new Size(150, 20);
+            lblBackupStatus.TextAlign = ContentAlignment.MiddleRight;
+            lblBackupStatus.Font = new Font("微软雅黑", 9F, FontStyle.Regular);
             form.Controls.Add(lblBackupStatus);
 
             UpdateAllDisplays();
 
-            // 延迟 1.5 秒后检查更新，防止被主界面覆盖
             form.Shown += (s, e) => {
                 Task.Run(() => {
                     System.Threading.Thread.Sleep(1500); 
@@ -128,51 +149,135 @@ namespace SpacePartyTool
             Application.Run(form);
         }
 
-        // 检查更新（丝滑无感版）
+        static DialogResult ShowCustomBox(string text, string title, bool isYesNo = false, Form parent = null)
+        {
+            Form f = new Form();
+            f.Text = title;
+            f.Size = new Size(350, 220);
+            f.FormBorderStyle = FormBorderStyle.None;
+            f.BackColor = Color.White;
+            f.Cursor = GetSystemCursor(); // 强行加载系统指针
+            f.Region = Region.FromHrgn(CreateRoundRectRgn(0, 0, f.Width, f.Height, 10, 10));
+            f.ShowInTaskbar = false;
+
+            f.MouseDown += (s, e) => {
+                if (e.Button == MouseButtons.Left) {
+                    ReleaseCapture();
+                    SendMessage(f.Handle, 0xA1, (IntPtr)0x2, IntPtr.Zero);
+                }
+            };
+
+            Label lblClose = new Label();
+            lblClose.Text = "✕";
+            lblClose.Font = new Font("Microsoft YaHei", 10F, FontStyle.Bold);
+            lblClose.ForeColor = Color.Gray;
+            lblClose.Location = new Point(315, 10);
+            lblClose.AutoSize = true;
+            lblClose.Cursor = Cursors.Hand;
+            lblClose.MouseEnter += (s, e) => { lblClose.ForeColor = Color.Red; };
+            lblClose.MouseLeave += (s, e) => { lblClose.ForeColor = Color.Gray; };
+            lblClose.Click += (s, e) => { f.DialogResult = DialogResult.Cancel; f.Close(); };
+            f.Controls.Add(lblClose);
+
+            Label lblText = new Label();
+            lblText.Text = text;
+            lblText.Font = new Font("微软雅黑", 10F, FontStyle.Regular);
+            lblText.Location = new Point(20, 35);
+            lblText.Size = new Size(310, 120);
+            lblText.TextAlign = ContentAlignment.TopLeft;
+            lblText.MouseDown += (s, e) => {
+                if (e.Button == MouseButtons.Left) {
+                    ReleaseCapture();
+                    SendMessage(f.Handle, 0xA1, (IntPtr)0x2, IntPtr.Zero);
+                }
+            };
+            f.Controls.Add(lblText);
+
+            Button btn1 = new Button();
+            btn1.Text = "确定";
+            btn1.Size = new Size(80, 30);
+            btn1.FlatStyle = FlatStyle.Flat;
+            btn1.FlatAppearance.BorderColor = Color.LightGray;
+            btn1.BackColor = Color.White;
+            btn1.Cursor = Cursors.Hand;
+            btn1.Click += (s, e) => { f.DialogResult = DialogResult.OK; f.Close(); };
+            f.Controls.Add(btn1);
+
+            if (isYesNo)
+            {
+                btn1.Location = new Point(140, 165);
+                Button btn2 = new Button();
+                btn2.Text = "取消";
+                btn2.Size = new Size(80, 30);
+                btn2.Location = new Point(230, 165);
+                btn2.FlatStyle = FlatStyle.Flat;
+                btn2.FlatAppearance.BorderColor = Color.LightGray;
+                btn2.BackColor = Color.White;
+                btn2.Cursor = Cursors.Hand;
+                btn2.Click += (s, e) => { f.DialogResult = DialogResult.No; f.Close(); };
+                f.Controls.Add(btn2);
+            }
+            else
+            {
+                btn1.Location = new Point(230, 165);
+            }
+
+            if (parent != null)
+            {
+                f.StartPosition = FormStartPosition.Manual;
+                f.Location = new Point(parent.Location.X + (parent.Width - f.Width) / 2, parent.Location.Y + (parent.Height - f.Height) / 2);
+            }
+            else
+            {
+                f.StartPosition = FormStartPosition.CenterScreen;
+            }
+
+            return f.ShowDialog();
+        }
+
+        static Button CreateStyledButton(string text, int top) {
+            Button btn = new Button();
+            btn.Text = text;
+            btn.Location = new Point(30, top);
+            btn.Size = new Size(320, 35);
+            btn.FlatStyle = FlatStyle.Flat;
+            btn.FlatAppearance.BorderSize = 1;
+            btn.FlatAppearance.BorderColor = Color.LightGray;
+            btn.BackColor = Color.White;
+            btn.Font = new Font("微软雅黑", 10F, FontStyle.Regular);
+            btn.Cursor = Cursors.Hand;
+            btn.MouseEnter += (s, e) => { btn.BackColor = Color.FromArgb(245, 245, 245); };
+            btn.MouseLeave += (s, e) => { btn.BackColor = Color.White; };
+            return btn;
+        }
+
         static void CheckForUpdates()
         {
             try
             {
                 ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072;
-
                 using (WebClient client = new WebClient())
                 {
-                    client.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
+                    client.Headers.Add("User-Agent", "Mozilla/5.0");
                     string url = versionUrl + "?t=" + DateTime.Now.Ticks;
-                    
-                    // 同步等待下载
-                    string remoteVersionStr = client.DownloadString(url).Trim();
-                    remoteVersionStr = remoteVersionStr.Replace("\r", "").Replace("\n", "").Replace(" ", "").Replace("\t", "");
-
+                    string remoteVersionStr = client.DownloadString(url).Trim().Replace("\r", "").Replace("\n", "").Replace(" ", "").Replace("\t", "");
                     Version remoteVer;
                     Version currentVer;
-                    
                     if (Version.TryParse(remoteVersionStr, out remoteVer) && Version.TryParse(currentVersion, out currentVer))
                     {
                         if (remoteVer > currentVer)
                         {
                             form.Invoke(new Action(() => {
-                                DialogResult result = MessageBox.Show(
+                                DialogResult result = ShowCustomBox(
                                     "发现新版本！\n\n当前版本：" + currentVersion + "\n最新版本：" + remoteVersionStr + "\n\n是否前往 GitHub 下载最新版？",
-                                    "版本更新提醒",
-                                    MessageBoxButtons.YesNo,
-                                    MessageBoxIcon.Information,
-                                    MessageBoxDefaultButton.Button1,
-                                    MessageBoxOptions.DefaultDesktopOnly); 
-
-                                if (result == DialogResult.Yes)
-                                {
-                                    Process.Start(updateUrl);
-                                }
+                                    "版本更新提醒", true, form);
+                                if (result == DialogResult.OK) Process.Start(updateUrl);
                             }));
                         }
                     }
                 }
             }
-            catch
-            {
-                // 网络不好时静默失败，不打扰用户
-            }
+            catch { }
         }
 
         static void UpdateAllDisplays()
@@ -192,68 +297,38 @@ namespace SpacePartyTool
                     {
                         object w = key.GetValue("Screenmanager Resolution Width_h182942802");
                         object h = key.GetValue("Screenmanager Resolution Height_h2627697771");
-                        if (w != null && h != null)
-                        {
-                            lblStatus.Text = "当前游戏分辨率: " + w.ToString() + " x " + h.ToString();
-                            return;
-                        }
+                        if (w != null && h != null) { lblStatus.Text = "当前游戏分辨率: " + w.ToString() + " x " + h.ToString(); return; }
                     }
                     lblStatus.Text = "当前游戏分辨率: 未找到";
                 }
             }
-            catch
-            {
-                lblStatus.Text = "当前游戏分辨率: 读取失败";
-            }
+            catch { lblStatus.Text = "当前游戏分辨率: 读取失败"; }
         }
 
         static void UpdateBackupStatus()
         {
-            if (File.Exists(backupFile))
-            {
-                lblBackupStatus.Text = "备份状态: 已备份";
-                lblBackupStatus.ForeColor = System.Drawing.Color.Green;
-            }
-            else
-            {
-                lblBackupStatus.Text = "备份状态: 无备份";
-                lblBackupStatus.ForeColor = System.Drawing.Color.Red;
-            }
+            if (File.Exists(backupFile)) { lblBackupStatus.Text = "备份状态: 已备份"; lblBackupStatus.ForeColor = Color.Green; }
+            else { lblBackupStatus.Text = "备份状态: 无备份"; lblBackupStatus.ForeColor = Color.Red; }
         }
 
         static void UpdateBackupResDisplay()
         {
-            if (!File.Exists(backupFile))
-            {
-                lblBackupRes.Text = "备份分辨率: 未备份";
-                lblBackupRes.ForeColor = System.Drawing.Color.Red;
-                return;
-            }
-
+            if (!File.Exists(backupFile)) { lblBackupRes.Text = "备份分辨率: 未备份"; lblBackupRes.ForeColor = Color.Red; return; }
             try
             {
                 string content = File.ReadAllText(backupFile);
                 System.Text.RegularExpressions.Match mW = System.Text.RegularExpressions.Regex.Match(content, @"Screenmanager Resolution Width_h182942802""=dword:([0-9a-fA-F]{8})");
                 System.Text.RegularExpressions.Match mH = System.Text.RegularExpressions.Regex.Match(content, @"Screenmanager Resolution Height_h2627697771""=dword:([0-9a-fA-F]{8})");
-
                 if (mW.Success && mH.Success)
                 {
                     int w = Convert.ToInt32(mW.Groups[1].Value, 16);
                     int h = Convert.ToInt32(mH.Groups[1].Value, 16);
                     lblBackupRes.Text = "备份分辨率: " + w.ToString() + " x " + h.ToString();
-                    lblBackupRes.ForeColor = System.Drawing.Color.Green;
+                    lblBackupRes.ForeColor = Color.Green;
                 }
-                else
-                {
-                    lblBackupRes.Text = "备份分辨率: 已备份 (读取内容失败)";
-                    lblBackupRes.ForeColor = System.Drawing.Color.Green;
-                }
+                else { lblBackupRes.Text = "备份分辨率: 已备份"; lblBackupRes.ForeColor = Color.Green; }
             }
-            catch
-            {
-                lblBackupRes.Text = "备份分辨率: 已备份 (读取异常)";
-                lblBackupRes.ForeColor = System.Drawing.Color.Green;
-            }
+            catch { lblBackupRes.Text = "备份分辨率: 已备份"; lblBackupRes.ForeColor = Color.Green; }
         }
 
         static void Btn1_Click(object sender, EventArgs e)
@@ -261,13 +336,13 @@ namespace SpacePartyTool
             if (File.Exists(backupFile))
             {
                 Process.Start("reg", "import \"" + backupFile + "\"").WaitForExit();
-                MessageBox.Show("原本分辨率还原成功！", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                ShowCustomBox("原本分辨率还原成功！", "成功", false, form);
                 UpdateAllDisplays();
             }
             else
             {
                 Process.Start("reg", "export \"HKEY_CURRENT_USER\\" + regPath + "\" \"" + backupFile + "\" /y").WaitForExit();
-                MessageBox.Show("备份成功！已保存在软件同目录下的 1.reg", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                ShowCustomBox("备份成功！已保存在软件同目录下的 1.reg", "成功", false, form);
                 UpdateAllDisplays();
             }
         }
@@ -291,24 +366,23 @@ namespace SpacePartyTool
                     key.SetValue("Screenmanager Resolution Use Native_h1405027254", 0, RegistryValueKind.DWord);
                     key.SetValue("Screenmanager Stereo 3D_h1665754519", 1, RegistryValueKind.DWord);
                 }
-                MessageBox.Show("超宽分辨率已开启！直接进游戏即可生效。", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                ShowCustomBox("超宽分辨率已开启！直接进游戏即可生效。", "成功", false, form);
                 UpdateAllDisplays();
             }
             catch
             {
-                MessageBox.Show("写入失败，请右键以管理员身份运行！", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                ShowCustomBox("写入失败，请右键以管理员身份运行！", "错误", false, form);
             }
         }
 
         static void Btn3_Click(object sender, EventArgs e)
         {
-            string w = ShowInputBox("请输入宽度 (例如 1920):", "自定义宽度");
+            string w = ShowInputBox("请输入宽度 (例如 1920):", "自定义宽度", form);
             if (string.IsNullOrEmpty(w)) return;
-            string h = ShowInputBox("请输入高度 (例如 1080):", "自定义高度");
+            string h = ShowInputBox("请输入高度 (例如 1080):", "自定义高度", form);
             if (string.IsNullOrEmpty(h)) return;
 
-            int iw = 0;
-            int ih = 0;
+            int iw = 0; int ih = 0;
             if (int.TryParse(w, out iw) && int.TryParse(h, out ih))
             {
                 try
@@ -323,17 +397,17 @@ namespace SpacePartyTool
                         key.SetValue("Screenmanager Resolution Height Default_h1380706816", ih, RegistryValueKind.DWord);
                         key.SetValue("ResolutionNew_h3187609911", 2, RegistryValueKind.DWord);
                     }
-                    MessageBox.Show("自定义分辨率修改成功！", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    ShowCustomBox("自定义分辨率修改成功！", "成功", false, form);
                     UpdateAllDisplays();
                 }
                 catch
                 {
-                    MessageBox.Show("写入失败，请右键以管理员身份运行！", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    ShowCustomBox("写入失败，请右键以管理员身份运行！", "错误", false, form);
                 }
             }
             else
             {
-                MessageBox.Show("请输入有效的数字！", "错误", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                ShowCustomBox("请输入有效的数字！", "错误", false, form);
             }
         }
 
@@ -341,57 +415,108 @@ namespace SpacePartyTool
         {
             if (File.Exists(backupFile))
             {
-                if (MessageBox.Show("确定要删除备份吗？删除后无法还原！", "确认", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
+                if (ShowCustomBox("确定要删除备份吗？删除后无法还原！", "确认删除", true, form) == DialogResult.OK)
                 {
                     File.Delete(backupFile);
-                    MessageBox.Show("备份已删除！", "成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    ShowCustomBox("备份已删除！", "成功", false, form);
                     UpdateAllDisplays();
                 }
             }
             else
             {
-                MessageBox.Show("没有找到备份文件！", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                ShowCustomBox("没有找到备份文件！", "提示", false, form);
             }
         }
 
-        static string ShowInputBox(string prompt, string title)
+        static string ShowInputBox(string prompt, string title, Form parent)
         {
-            Form form = new Form();
-            form.Text = title;
-            form.Width = 350;
-            form.Height = 200;
-            form.StartPosition = FormStartPosition.CenterParent;
+            Form f = new Form();
+            f.Text = title;
+            f.Width = 350;
+            f.Height = 200;
+            f.FormBorderStyle = FormBorderStyle.None;
+            f.BackColor = Color.White;
+            f.Cursor = GetSystemCursor(); // 强行加载系统指针
+            f.Region = Region.FromHrgn(CreateRoundRectRgn(0, 0, f.Width, f.Height, 10, 10));
+            f.ShowInTaskbar = false;
+
+            f.MouseDown += (s, e) => {
+                if (e.Button == MouseButtons.Left) {
+                    ReleaseCapture();
+                    SendMessage(f.Handle, 0xA1, (IntPtr)0x2, IntPtr.Zero);
+                }
+            };
+
+            Label lblClose = new Label();
+            lblClose.Text = "✕";
+            lblClose.Font = new Font("Microsoft YaHei", 10F, FontStyle.Bold);
+            lblClose.ForeColor = Color.Gray;
+            lblClose.Location = new Point(315, 10);
+            lblClose.AutoSize = true;
+            lblClose.Cursor = Cursors.Hand;
+            lblClose.MouseEnter += (s, e) => { lblClose.ForeColor = Color.Red; };
+            lblClose.MouseLeave += (s, e) => { lblClose.ForeColor = Color.Gray; };
+            lblClose.Click += (s, e) => { f.DialogResult = DialogResult.Cancel; f.Close(); };
+            f.Controls.Add(lblClose);
+
             Label lbl = new Label();
             lbl.Text = prompt;
-            lbl.Left = 20;
-            lbl.Top = 20;
-            lbl.Width = 300;
+            lbl.Font = new Font("微软雅黑", 10F);
+            lbl.Location = new Point(20, 35);
+            lbl.Size = new Size(300, 25);
+            lbl.MouseDown += (s, e) => {
+                if (e.Button == MouseButtons.Left) {
+                    ReleaseCapture();
+                    SendMessage(f.Handle, 0xA1, (IntPtr)0x2, IntPtr.Zero);
+                }
+            };
+            f.Controls.Add(lbl);
+
             TextBox txt = new TextBox();
             txt.Left = 20;
-            txt.Top = 50;
+            txt.Top = 70;
             txt.Width = 290;
+            txt.Font = new Font("微软雅黑", 10F);
+            f.Controls.Add(txt);
+
             Button btnOk = new Button();
             btnOk.Text = "确定";
-            btnOk.Left = 140;
-            btnOk.Top = 90;
-            btnOk.Width = 80;
+            btnOk.Size = new Size(80, 30);
+            btnOk.Location = new Point(140, 130);
+            btnOk.FlatStyle = FlatStyle.Flat;
+            btnOk.FlatAppearance.BorderColor = Color.LightGray;
+            btnOk.BackColor = Color.White;
+            btnOk.Cursor = Cursors.Hand;
+            f.Controls.Add(btnOk);
+
             Button btnCancel = new Button();
             btnCancel.Text = "取消";
-            btnCancel.Left = 230;
-            btnCancel.Top = 90;
-            btnCancel.Width = 80;
+            btnCancel.Size = new Size(80, 30);
+            btnCancel.Location = new Point(230, 130);
+            btnCancel.FlatStyle = FlatStyle.Flat;
+            btnCancel.FlatAppearance.BorderColor = Color.LightGray;
+            btnCancel.BackColor = Color.White;
+            btnCancel.Cursor = Cursors.Hand;
             btnCancel.DialogResult = DialogResult.Cancel;
+            f.Controls.Add(btnCancel);
             
             string result = "";
-            btnOk.Click += new EventHandler(delegate(object s, EventArgs e) { result = txt.Text; form.Close(); });
+            btnOk.Click += new EventHandler(delegate(object s, EventArgs e) { result = txt.Text; f.Close(); });
             
-            form.Controls.Add(lbl);
-            form.Controls.Add(txt);
-            form.Controls.Add(btnOk);
-            form.Controls.Add(btnCancel);
-            form.AcceptButton = btnOk;
-            form.CancelButton = btnCancel;
-            form.ShowDialog();
+            f.AcceptButton = btnOk;
+            f.CancelButton = btnCancel;
+
+            if (parent != null)
+            {
+                f.StartPosition = FormStartPosition.Manual;
+                f.Location = new Point(parent.Location.X + (parent.Width - f.Width) / 2, parent.Location.Y + (parent.Height - f.Height) / 2);
+            }
+            else
+            {
+                f.StartPosition = FormStartPosition.CenterScreen;
+            }
+
+            f.ShowDialog();
             return result;
         }
     }
