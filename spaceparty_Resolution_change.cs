@@ -20,9 +20,20 @@ namespace SpacePartyTool
         static Label lblBackupStatus;
         static Label lblBackupRes;
 
-        static string currentVersion = "4.4";
+        static string currentVersion = "4.5";
         static string versionUrl = "https://ghproxy.net/https://raw.githubusercontent.com/114514imageset/spaceparty_Resolution_change/main/Version.txt";
         static string updateUrl = "https://github.com/114514imageset/spaceparty_Resolution_change/releases";
+
+        // 引入底层 API 用于 MessageBox 居中
+        [DllImport("user32.dll")]
+        static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+        [DllImport("user32.dll")]
+        static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+        [DllImport("user32.dll")]
+        static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct RECT { public int Left, Top, Right, Bottom; }
 
         [DllImport("gdi32.dll")]
         static extern IntPtr CreateRoundRectRgn(int nLeftRect, int nTopRect, int nRightRect, int nBottomRect, int nWidthEllipse, int nHeightEllipse);
@@ -33,7 +44,6 @@ namespace SpacePartyTool
         [DllImport("user32.dll")]
         static extern IntPtr LoadCursorFromFile(string lpFileName);
 
-        // 强行加载系统指针的方法
         static Cursor GetSystemCursor()
         {
             try {
@@ -59,7 +69,7 @@ namespace SpacePartyTool
                          "用 DeepSeek 做的，尽力了\n\n" +
                          "是否打开作者的主页？";
 
-            if (ShowCustomBox(msg, "关于软件", true, null) == DialogResult.Yes)
+            if (ShowSystemMessage(msg, "关于软件", true) == DialogResult.Yes)
             {
                 Process.Start("https://space.bilibili.com/1392176543");
             }
@@ -70,7 +80,7 @@ namespace SpacePartyTool
             form.StartPosition = FormStartPosition.CenterScreen;
             form.FormBorderStyle = FormBorderStyle.None;
             form.BackColor = Color.White;
-            form.Cursor = GetSystemCursor(); // 强行加载系统指针
+            form.Cursor = GetSystemCursor();
             form.Region = Region.FromHrgn(CreateRoundRectRgn(0, 0, form.Width, form.Height, 10, 10));
 
             form.MouseDown += (s, e) => {
@@ -149,90 +159,32 @@ namespace SpacePartyTool
             Application.Run(form);
         }
 
-        static DialogResult ShowCustomBox(string text, string title, bool isYesNo = false, Form parent = null)
+        // 【核心破解】使用系统原生 MessageBox，并强行居中到主界面
+        static DialogResult ShowSystemMessage(string text, string caption, bool isYesNo)
         {
-            Form f = new Form();
-            f.Text = title;
-            f.Size = new Size(350, 220);
-            f.FormBorderStyle = FormBorderStyle.None;
-            f.BackColor = Color.White;
-            f.Cursor = GetSystemCursor(); // 强行加载系统指针
-            f.Region = Region.FromHrgn(CreateRoundRectRgn(0, 0, f.Width, f.Height, 10, 10));
-            f.ShowInTaskbar = false;
-
-            f.MouseDown += (s, e) => {
-                if (e.Button == MouseButtons.Left) {
-                    ReleaseCapture();
-                    SendMessage(f.Handle, 0xA1, (IntPtr)0x2, IntPtr.Zero);
+            // 启动一个定时器，在弹窗出现后立刻把它拉回屏幕中央
+            Timer timer = new Timer();
+            timer.Interval = 50;
+            timer.Tick += (s, e) => {
+                IntPtr hWnd = FindWindow(null, caption);
+                if (hWnd != IntPtr.Zero)
+                {
+                    RECT rect;
+                    GetWindowRect(hWnd, out rect);
+                    int w = rect.Right - rect.Left;
+                    int h = rect.Bottom - rect.Top;
+                    
+                    int screenW = Screen.PrimaryScreen.WorkingArea.Width;
+                    int screenH = Screen.PrimaryScreen.WorkingArea.Height;
+                    
+                    SetWindowPos(hWnd, IntPtr.Zero, (screenW - w) / 2, (screenH - h) / 2, 0, 0, 0x0001);
+                    timer.Stop();
                 }
             };
+            timer.Start();
 
-            Label lblClose = new Label();
-            lblClose.Text = "✕";
-            lblClose.Font = new Font("Microsoft YaHei", 10F, FontStyle.Bold);
-            lblClose.ForeColor = Color.Gray;
-            lblClose.Location = new Point(315, 10);
-            lblClose.AutoSize = true;
-            lblClose.Cursor = Cursors.Hand;
-            lblClose.MouseEnter += (s, e) => { lblClose.ForeColor = Color.Red; };
-            lblClose.MouseLeave += (s, e) => { lblClose.ForeColor = Color.Gray; };
-            lblClose.Click += (s, e) => { f.DialogResult = DialogResult.Cancel; f.Close(); };
-            f.Controls.Add(lblClose);
-
-            Label lblText = new Label();
-            lblText.Text = text;
-            lblText.Font = new Font("微软雅黑", 10F, FontStyle.Regular);
-            lblText.Location = new Point(20, 35);
-            lblText.Size = new Size(310, 120);
-            lblText.TextAlign = ContentAlignment.TopLeft;
-            lblText.MouseDown += (s, e) => {
-                if (e.Button == MouseButtons.Left) {
-                    ReleaseCapture();
-                    SendMessage(f.Handle, 0xA1, (IntPtr)0x2, IntPtr.Zero);
-                }
-            };
-            f.Controls.Add(lblText);
-
-            Button btn1 = new Button();
-            btn1.Text = "确定";
-            btn1.Size = new Size(80, 30);
-            btn1.FlatStyle = FlatStyle.Flat;
-            btn1.FlatAppearance.BorderColor = Color.LightGray;
-            btn1.BackColor = Color.White;
-            btn1.Cursor = Cursors.Hand;
-            btn1.Click += (s, e) => { f.DialogResult = DialogResult.OK; f.Close(); };
-            f.Controls.Add(btn1);
-
-            if (isYesNo)
-            {
-                btn1.Location = new Point(140, 165);
-                Button btn2 = new Button();
-                btn2.Text = "取消";
-                btn2.Size = new Size(80, 30);
-                btn2.Location = new Point(230, 165);
-                btn2.FlatStyle = FlatStyle.Flat;
-                btn2.FlatAppearance.BorderColor = Color.LightGray;
-                btn2.BackColor = Color.White;
-                btn2.Cursor = Cursors.Hand;
-                btn2.Click += (s, e) => { f.DialogResult = DialogResult.No; f.Close(); };
-                f.Controls.Add(btn2);
-            }
-            else
-            {
-                btn1.Location = new Point(230, 165);
-            }
-
-            if (parent != null)
-            {
-                f.StartPosition = FormStartPosition.Manual;
-                f.Location = new Point(parent.Location.X + (parent.Width - f.Width) / 2, parent.Location.Y + (parent.Height - f.Height) / 2);
-            }
-            else
-            {
-                f.StartPosition = FormStartPosition.CenterScreen;
-            }
-
-            return f.ShowDialog();
+            if (isYesNo) return MessageBox.Show(text, caption, MessageBoxButtons.YesNo, MessageBoxIcon.Information);
+            else return MessageBox.Show(text, caption, MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         static Button CreateStyledButton(string text, int top) {
@@ -268,10 +220,10 @@ namespace SpacePartyTool
                         if (remoteVer > currentVer)
                         {
                             form.Invoke(new Action(() => {
-                                DialogResult result = ShowCustomBox(
+                                DialogResult result = ShowSystemMessage(
                                     "发现新版本！\n\n当前版本：" + currentVersion + "\n最新版本：" + remoteVersionStr + "\n\n是否前往 GitHub 下载最新版？",
-                                    "版本更新提醒", true, form);
-                                if (result == DialogResult.OK) Process.Start(updateUrl);
+                                    "版本更新提醒", true);
+                                if (result == DialogResult.Yes) Process.Start(updateUrl);
                             }));
                         }
                     }
@@ -336,13 +288,13 @@ namespace SpacePartyTool
             if (File.Exists(backupFile))
             {
                 Process.Start("reg", "import \"" + backupFile + "\"").WaitForExit();
-                ShowCustomBox("原本分辨率还原成功！", "成功", false, form);
+                ShowSystemMessage("原本分辨率还原成功！", "成功", false);
                 UpdateAllDisplays();
             }
             else
             {
                 Process.Start("reg", "export \"HKEY_CURRENT_USER\\" + regPath + "\" \"" + backupFile + "\" /y").WaitForExit();
-                ShowCustomBox("备份成功！已保存在软件同目录下的 1.reg", "成功", false, form);
+                ShowSystemMessage("备份成功！已保存在软件同目录下的 1.reg", "成功", false);
                 UpdateAllDisplays();
             }
         }
@@ -366,20 +318,20 @@ namespace SpacePartyTool
                     key.SetValue("Screenmanager Resolution Use Native_h1405027254", 0, RegistryValueKind.DWord);
                     key.SetValue("Screenmanager Stereo 3D_h1665754519", 1, RegistryValueKind.DWord);
                 }
-                ShowCustomBox("超宽分辨率已开启！直接进游戏即可生效。", "成功", false, form);
+                ShowSystemMessage("超宽分辨率已开启！直接进游戏即可生效。", "成功", false);
                 UpdateAllDisplays();
             }
             catch
             {
-                ShowCustomBox("写入失败，请右键以管理员身份运行！", "错误", false, form);
+                ShowSystemMessage("写入失败，请右键以管理员身份运行！", "错误", false);
             }
         }
 
         static void Btn3_Click(object sender, EventArgs e)
         {
-            string w = ShowInputBox("请输入宽度 (例如 1920):", "自定义宽度", form);
+            string w = ShowInputBox("请输入宽度 (例如 1920):", "自定义宽度");
             if (string.IsNullOrEmpty(w)) return;
-            string h = ShowInputBox("请输入高度 (例如 1080):", "自定义高度", form);
+            string h = ShowInputBox("请输入高度 (例如 1080):", "自定义高度");
             if (string.IsNullOrEmpty(h)) return;
 
             int iw = 0; int ih = 0;
@@ -397,17 +349,17 @@ namespace SpacePartyTool
                         key.SetValue("Screenmanager Resolution Height Default_h1380706816", ih, RegistryValueKind.DWord);
                         key.SetValue("ResolutionNew_h3187609911", 2, RegistryValueKind.DWord);
                     }
-                    ShowCustomBox("自定义分辨率修改成功！", "成功", false, form);
+                    ShowSystemMessage("自定义分辨率修改成功！", "成功", false);
                     UpdateAllDisplays();
                 }
                 catch
                 {
-                    ShowCustomBox("写入失败，请右键以管理员身份运行！", "错误", false, form);
+                    ShowSystemMessage("写入失败，请右键以管理员身份运行！", "错误", false);
                 }
             }
             else
             {
-                ShowCustomBox("请输入有效的数字！", "错误", false, form);
+                ShowSystemMessage("请输入有效的数字！", "错误", false);
             }
         }
 
@@ -415,20 +367,20 @@ namespace SpacePartyTool
         {
             if (File.Exists(backupFile))
             {
-                if (ShowCustomBox("确定要删除备份吗？删除后无法还原！", "确认删除", true, form) == DialogResult.OK)
+                if (ShowSystemMessage("确定要删除备份吗？删除后无法还原！", "确认删除", true) == DialogResult.Yes)
                 {
                     File.Delete(backupFile);
-                    ShowCustomBox("备份已删除！", "成功", false, form);
+                    ShowSystemMessage("备份已删除！", "成功", false);
                     UpdateAllDisplays();
                 }
             }
             else
             {
-                ShowCustomBox("没有找到备份文件！", "提示", false, form);
+                ShowSystemMessage("没有找到备份文件！", "提示", false);
             }
         }
 
-        static string ShowInputBox(string prompt, string title, Form parent)
+        static string ShowInputBox(string prompt, string title)
         {
             Form f = new Form();
             f.Text = title;
@@ -436,9 +388,10 @@ namespace SpacePartyTool
             f.Height = 200;
             f.FormBorderStyle = FormBorderStyle.None;
             f.BackColor = Color.White;
-            f.Cursor = GetSystemCursor(); // 强行加载系统指针
+            f.Cursor = GetSystemCursor();
             f.Region = Region.FromHrgn(CreateRoundRectRgn(0, 0, f.Width, f.Height, 10, 10));
             f.ShowInTaskbar = false;
+            f.StartPosition = FormStartPosition.CenterScreen;
 
             f.MouseDown += (s, e) => {
                 if (e.Button == MouseButtons.Left) {
@@ -464,12 +417,6 @@ namespace SpacePartyTool
             lbl.Font = new Font("微软雅黑", 10F);
             lbl.Location = new Point(20, 35);
             lbl.Size = new Size(300, 25);
-            lbl.MouseDown += (s, e) => {
-                if (e.Button == MouseButtons.Left) {
-                    ReleaseCapture();
-                    SendMessage(f.Handle, 0xA1, (IntPtr)0x2, IntPtr.Zero);
-                }
-            };
             f.Controls.Add(lbl);
 
             TextBox txt = new TextBox();
@@ -501,20 +448,15 @@ namespace SpacePartyTool
             f.Controls.Add(btnCancel);
             
             string result = "";
-            btnOk.Click += new EventHandler(delegate(object s, EventArgs e) { result = txt.Text; f.Close(); });
+            btnOk.MouseDown += (s, e) => { result = txt.Text; f.DialogResult = DialogResult.OK; f.Close(); };
             
             f.AcceptButton = btnOk;
             f.CancelButton = btnCancel;
 
-            if (parent != null)
-            {
-                f.StartPosition = FormStartPosition.Manual;
-                f.Location = new Point(parent.Location.X + (parent.Width - f.Width) / 2, parent.Location.Y + (parent.Height - f.Height) / 2);
-            }
-            else
-            {
-                f.StartPosition = FormStartPosition.CenterScreen;
-            }
+            btnOk.BringToFront();
+            btnCancel.BringToFront();
+            lblClose.BringToFront();
+            txt.BringToFront();
 
             f.ShowDialog();
             return result;
